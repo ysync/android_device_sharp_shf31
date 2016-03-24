@@ -1,0 +1,102 @@
+on init
+
+	export LD_LIBRARY_PATH /system/lib
+	
+    mkdir /synthesis
+    mount tmpfs tmpfs /synthesis nosuid nodev
+    chown root root /synthesis
+    chmod 0711 /synthesis
+    mkdir /synthesis/shdisp 1770 root shdisp
+
+    mkdir /synthesis/wfd 0775 root shwfd
+    mkdir /synthesis/bgpowerusage 0775 system system
+    mkdir /synthesis/hades 0775 root root
+
+    mkdir /data/property 0700 root root
+
+on post-fs
+
+    chown system system /sys/class/android_usb/android0/f_mass_storage/lun/file
+    chmod 0660 /sys/class/android_usb/android0/f_mass_storage/lun/file
+    chown system system /sys/class/android_usb/android0/f_rndis/ethaddr
+    chmod 0660 /sys/class/android_usb/android0/f_rndis/ethaddr
+
+on post-fs-data
+
+    mkdir /data/misc 0770 system system
+    mkdir /data/misc/shdisp 0770 system system
+
+    service usbhub_init /system/bin/usbhub_init
+		disabled
+		oneshot
+
+on boot
+
+    #Set SUID bit for usbhub
+    chmod 4755 /system/bin/usbhub
+    chmod 755 /system/bin/usbhub_init
+    chmod 0444 /sys/devices/platform/msm_hsusb/gadget/usb_state
+    #For bridgemgr daemon to inform the USB driver of the correct transport
+    chown radio radio /sys/class/android_usb/f_rmnet_smd_sdio/transport
+
+    write /sys/class/android_usb/android0/f_rndis/manufacturer ${ro.product.manufacturer}
+    write /sys/class/android_usb/android0/f_rndis/vendorID 04DD
+    write /sys/class/android_usb/android0/f_rndis/wceis 1
+    chown system system /sys/devices/msm_dwc3/f9200000.dwc3/usb_host_enable
+
+#host-api mkdir
+    mkdir /dev/bus 0755
+    mkdir /dev/bus/usb 0755
+
+#string descriptor
+    write /sys/class/android_usb/android0/iManufacturer "SHARP Corporation"
+    write /sys/class/android_usb/android0/iProduct "SHF31"
+    write /sys/class/android_usb/android0/iSerial ${ro.serialno}
+    write /sys/class/android_usb/android0/f_mass_storage/msc_iInterface "SHF31 SD Storage"
+
+#class-specific paramater
+    write /sys/class/android_usb/android0/f_mass_storage/msc_inquiry_string "SHARP   SHF31 microSD"
+
+		setprop persist.sys.usb.config mass_storage,adb
+
+# adbd is controlled via property triggers in init.<platform>.usb.rc
+# service adbd /sbin/adbd
+#    class core
+#    socket adbd stream 660 system system
+#    disabled
+
+service shdisp_process /system/bin/shdisp_process
+    class main
+    socket shdisp_process stream 0660 root mount
+
+service usbmgrinitd /system/bin/usbmgrinitd
+    oneshot
+
+service shusb_process /system/bin/shusb_process
+    class main
+
+on property:sys.usb.config=adb
+    write /sys/class/android_usb/android0/enable 0
+    write /sys/class/android_usb/android0/idVendor 18d1
+    write /sys/class/android_usb/android0/idProduct D002
+    write /sys/class/android_usb/android0/functions ${sys.usb.config}
+    write /sys/class/android_usb/android0/enable 1
+    start adbd
+    setprop sys.usb.state ${sys.usb.config}
+
+on property:sys.usb.config=mass_storage,adb
+    write /sys/class/android_usb/android0/enable 0
+    write /sys/class/android_usb/android0/idVendor 04DD
+    write /sys/class/android_usb/android0/idProduct 987C
+    write /sys/class/android_usb/android0/bDeviceClass 0
+    write /sys/class/android_usb/android0/functions ${sys.usb.config}
+    write /sys/class/android_usb/android0/enable 1
+    start adbd
+    setprop sys.usb.state ${sys.usb.config}
+
+on property:ro.board.platform=msm7630_fusion
+    start usbhub_init
+
+on property:persist.sys.usb.config=*
+    setprop sys.usb.config ${persist.sys.usb.config}
+
